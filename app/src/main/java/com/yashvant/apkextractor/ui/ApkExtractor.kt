@@ -1,45 +1,31 @@
 package com.yashvant.apkextractor.ui
 
+import android.Manifest
 import android.app.AlertDialog
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.drawable.Drawable
+import android.net.Uri
+import android.os.Build
+import android.os.Environment
+import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.Button
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.core.graphics.drawable.toBitmap
-import java.io.File
+import androidx.documentfile.provider.DocumentFile
 import java.io.FileInputStream
-import java.io.FileOutputStream
-import java.net.URI
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -48,13 +34,17 @@ fun ApkExtractorApp() {
     var selectedApp by remember { mutableStateOf<AppInfo?>(null) }
     var apps by remember { mutableStateOf(listOf<AppInfo>()) }
     var selectedDirectory by remember { mutableStateOf<String?>(null) }
+    var hasPermissions by remember { mutableStateOf(false) }
 
-    // Get list of installed apps
-    LaunchedEffect(Unit) {
-        apps = getInstalledApps(context)
+    val permissionsLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        hasPermissions = permissions.values.all { it }
+        if (hasPermissions) {
+            apps = getInstalledApps(context)
+        }
     }
 
-    // Directory selection launcher
     val directoryLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocumentTree()
     ) { uri ->
@@ -65,6 +55,25 @@ fun ApkExtractorApp() {
                         Intent.FLAG_GRANT_WRITE_URI_PERMISSION
             )
             selectedDirectory = it.toString()
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            if (!Environment.isExternalStorageManager()) {
+                val intent = Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
+                context.startActivity(intent)
+            } else {
+                hasPermissions = true
+                apps = getInstalledApps(context)
+            }
+        } else {
+            permissionsLauncher.launch(
+                arrayOf(
+                    Manifest.permission.READ_EXTERNAL_STORAGE,
+                    Manifest.permission.WRITE_EXTERNAL_STORAGE
+                )
+            )
         }
     }
 
@@ -80,56 +89,58 @@ fun ApkExtractorApp() {
                 .padding(padding)
                 .fillMaxSize()
         ) {
-            // App Selection Section
-            Text(
-                text = "Select an App",
-                style = MaterialTheme.typography.headlineSmall,
-                modifier = Modifier.padding(16.dp)
-            )
+            if (!hasPermissions) {
+                Text(
+                    "Please grant storage permissions to use the app",
+                    modifier = Modifier.padding(16.dp)
+                )
+            } else {
+                Text(
+                    text = "Select an App",
+                    style = MaterialTheme.typography.headlineSmall,
+                    modifier = Modifier.padding(16.dp)
+                )
 
-            LazyColumn {
-                items(apps) { app ->
-                    AppListItem(
-                        app = app,
-                        isSelected = app == selectedApp,
-                        onSelect = { selectedApp = it }
+                LazyColumn(
+                    modifier = Modifier.weight(1f)
+                ) {
+                    items(apps) { app ->
+                        AppListItem(
+                            app = app,
+                            isSelected = app == selectedApp,
+                            onSelect = { selectedApp = it }
+                        )
+                    }
+                }
+
+                Button(
+                    onClick = { directoryLauncher.launch(null) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp)
+                ) {
+                    Text(
+                        text = selectedDirectory?.let {
+                            "Selected Directory: ${Uri.parse(it).lastPathSegment}"
+                        } ?: "Choose Export Directory"
                     )
                 }
-            }
 
-            // Directory Selection
-            Button(
-                onClick = {
-                    directoryLauncher.launch(null)
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp)
-            ) {
-                Text(
-                    text = selectedDirectory?.let {
-                        "Selected Directory: $it"
-                    } ?: "Choose Export Directory"
-                )
-            }
-
-            // Generate APK Button
-            Button(
-                onClick = {
-                    selectedApp?.let { app ->
-                        selectedDirectory?.let { dir ->
-                            extractApk(context, app, dir)
-                        } ?: run {
-                            // Show error that directory is not selected
+                Button(
+                    onClick = {
+                        selectedApp?.let { app ->
+                            selectedDirectory?.let { dir ->
+                                extractApk(context, app, dir)
+                            }
                         }
-                    }
-                },
-                enabled = selectedApp != null && selectedDirectory != null,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp)
-            ) {
-                Text("Generate APK")
+                    },
+                    enabled = selectedApp != null && selectedDirectory != null,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp)
+                ) {
+                    Text("Generate APK")
+                }
             }
         }
     }
@@ -166,49 +177,54 @@ fun AppListItem(
     }
 }
 
-// Utility Functions
+
 private fun getInstalledApps(context: Context): List<AppInfo> {
     val packageManager = context.packageManager
-    return packageManager.getInstalledApplications(PackageManager.GET_META_DATA)
-        .map { appInfo ->
+    return packageManager.getInstalledPackages(PackageManager.GET_META_DATA)
+        .filter { packageInfo ->
+            packageManager.getLaunchIntentForPackage(packageInfo.packageName) != null
+        }
+        .map { packageInfo ->
             AppInfo(
-                name = appInfo.loadLabel(packageManager).toString(),
-                packageName = appInfo.packageName,
-                icon = appInfo.loadIcon(packageManager)
+                name = packageInfo.applicationInfo!!.loadLabel(packageManager).toString(),
+                packageName = packageInfo.packageName,
+                icon = packageInfo.applicationInfo!!.loadIcon(packageManager)
             )
         }
         .sortedBy { it.name }
 }
+
 
 private fun extractApk(
     context: Context,
     app: AppInfo,
     destinationUri: String
 ) {
-    val packageManager = context.packageManager
-    val appInfo = packageManager.getApplicationInfo(app.packageName, 0)
-    val sourceApk = appInfo.sourceDir
-
     try {
-        val destinationFile = File(
-            URI.create(destinationUri).path,
-            "${app.name}_${app.packageName}.apk"
-        )
+        val packageManager = context.packageManager
+        val appInfo = packageManager.getApplicationInfo(app.packageName, 0)
+        val sourceApk = appInfo.sourceDir
 
-        FileInputStream(sourceApk).use { input ->
-            FileOutputStream(destinationFile).use { output ->
+        val destinationDirectory = DocumentFile.fromTreeUri(context, Uri.parse(destinationUri))
+            ?: throw IllegalStateException("Cannot access destination directory")
+
+        val apkFile = destinationDirectory.createFile(
+            "application/vnd.android.package-archive",
+            "${app.name}_${app.packageName}.apk"
+        ) ?: throw IllegalStateException("Cannot create destination file")
+
+        context.contentResolver.openOutputStream(apkFile.uri)?.use { output ->
+            FileInputStream(sourceApk).use { input ->
                 input.copyTo(output)
             }
         }
 
-        // Show success dialog
         AlertDialog.Builder(context)
             .setTitle("APK Extracted")
-            .setMessage("APK saved to ${destinationFile.absolutePath}")
+            .setMessage("APK saved successfully")
             .setPositiveButton("OK") { dialog, _ -> dialog.dismiss() }
             .show()
     } catch (e: Exception) {
-        // Show error dialog
         AlertDialog.Builder(context)
             .setTitle("Error")
             .setMessage("Failed to extract APK: ${e.message}")
@@ -217,7 +233,6 @@ private fun extractApk(
     }
 }
 
-// Data Classes
 data class AppInfo(
     val name: String,
     val packageName: String,

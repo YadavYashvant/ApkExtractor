@@ -1,4 +1,4 @@
-package com.yashvant.apkextractor.ui
+package com.yashvant.apkextractor.ui.screens
 
 import android.Manifest
 import android.app.AlertDialog

@@ -1,3 +1,5 @@
+package com.yashvant.apkextractor.ui.screens
+
 import android.app.Activity
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Column
@@ -24,7 +26,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.core.graphics.drawable.toBitmap
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.yashvant.apkextractor.data.storage.GoogleDriveStorage
+import com.yashvant.apkextractor.ui.viewmodel.AppBackupViewModel
+import com.yashvant.apkextractor.ui.viewmodel.BackupStatus
 
 @Composable
 fun AppListScreen(
@@ -97,7 +103,7 @@ fun AppListItem(
         ) {
             appInfo.icon?.let { icon ->
                 Image(
-                    bitmap = icon.asImageBitmap(),
+                    bitmap = icon.toBitmap().asImageBitmap(),
                     contentDescription = null,
                     modifier = Modifier.size(48.dp)
                 )

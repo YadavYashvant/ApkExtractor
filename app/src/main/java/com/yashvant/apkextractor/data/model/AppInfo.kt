@@ -1,3 +1,5 @@
+package com.yashvant.apkextractor.data.model
+
 import android.graphics.Bitmap
 
 data class AppInfo(

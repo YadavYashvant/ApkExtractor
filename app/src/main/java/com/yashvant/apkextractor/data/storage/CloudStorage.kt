@@ -1,3 +1,5 @@
+package com.yashvant.apkextractor.data.storage
+
 import java.io.File
 
 interface CloudStorage {

@@ -22,7 +22,7 @@ class AppBackupViewModel @Inject constructor(
     private val _backupStatus = MutableStateFlow<Map<String, BackupStatus>>(emptyMap())
     val backupStatus: StateFlow<Map<String, BackupStatus>> = _backupStatus.asStateFlow()
 
-    val authState = googleDriveStorage.authState.asStateFlow()
+    val authState = googleDriveStorage.authState
 
     init {
         loadInstalledApps()

@@ -13,6 +13,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
 import com.yashvant.apkextractor.ui.screens.ApkExtractorApp
 import com.yashvant.apkextractor.ui.theme.ApkExtractorTheme
+import dagger.hilt.android.AndroidEntryPoint
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {

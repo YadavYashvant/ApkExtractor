@@ -72,6 +72,8 @@ fun AppListScreen(
                     modifier = Modifier.padding(16.dp)
                 )
             }
+
+            else -> {}
         }
     }
 }

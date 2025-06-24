@@ -10,7 +10,6 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import javax.inject.Singleton
 
-
 @Module
 @InstallIn(SingletonComponent::class)
 object AppModule {
@@ -20,5 +19,6 @@ object AppModule {
 
     @Provides
     @Singleton
-    fun provideCloudStorage(googleDriveStorage: GoogleDriveStorage): GoogleDriveStorage = googleDriveStorage
-} 
+    fun provideCloudStorage(googleDriveStorage: GoogleDriveStorage): CloudStorage = googleDriveStorage
+}
+

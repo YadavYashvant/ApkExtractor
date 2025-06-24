@@ -1,99 +1,44 @@
 package com.yashvant.apkextractor.ui.screens
 
-import android.app.Activity
+import android.content.Intent
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
+import androidx.compose.material.icons.automirrored.filled.ExitToApp
+import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import androidx.core.graphics.drawable.toBitmap
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.google.android.gms.auth.api.signin.GoogleSignIn
+import com.google.android.gms.auth.api.signin.GoogleSignInOptions
+import com.google.android.gms.common.api.Scope
+import com.yashvant.apkextractor.data.model.AppInfo
 import com.yashvant.apkextractor.data.storage.GoogleDriveStorage
 import com.yashvant.apkextractor.ui.viewmodel.AppBackupViewModel
-import com.yashvant.apkextractor.ui.viewmodel.BackupStatus
-
-@Composable
-fun AppListScreen(
-    viewModel: AppBackupViewModel = hiltViewModel()
-) {
-    val authState by viewModel.authState.collectAsState()
-    val apps by viewModel.apps.collectAsState()
-    val backupStatus by viewModel.backupStatus.collectAsState()
-
-    Column {
-        val mContext = LocalContext.current
-        when (val state = authState) {
-            is GoogleDriveStorage.AuthState.NotAuthenticated -> {
-                Button(
-                    onClick = { 
-                        val activity = mContext as? Activity
-                        activity?.let { viewModel.signIn(it) }
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp)
-                ) {
-                    Text("Sign in with Google Drive")
-                }
-            }
-            is GoogleDriveStorage.AuthState.Authenticated -> {
-                Text(
-                    text = "Signed in as: ${state.email}",
-                    modifier = Modifier.padding(16.dp)
-                )
-                LazyColumn {
-                    items(apps) { appInfo ->
-                        AppListItem(
-                            appInfo = appInfo,
-                            backupStatus = backupStatus[appInfo.packageName],
-                            onBackupClick = { viewModel.backupApp(appInfo) }
-                        )
-                    }
-                }
-            }
-            is GoogleDriveStorage.AuthState.Error -> {
-                Text(
-                    text = "Error: ${state.exception.message}",
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.padding(16.dp)
-                )
-            }
-
-            else -> {}
-        }
-    }
-}
+import com.yashvant.apkextractor.ui.viewmodel.UiState
 
 @Composable
 fun AppListItem(
-    appInfo: AppInfo,
-    backupStatus: BackupStatus?,
-    onBackupClick: () -> Unit
+    app: AppInfo,
+    isSelected: Boolean,
+    onSelect: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     Card(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
-            .padding(8.dp)
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .clickable(onClick = onSelect),
     ) {
         Row(
             modifier = Modifier
@@ -101,49 +46,328 @@ fun AppListItem(
                 .fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            appInfo.icon?.let { icon ->
+            Checkbox(
+                checked = isSelected,
+                onCheckedChange = { onSelect() }
+            )
+            Spacer(modifier = Modifier.width(16.dp))
+            app.icon?.let { bitmap ->
                 Image(
-                    bitmap = icon.toBitmap().asImageBitmap(),
-                    contentDescription = null,
+                    bitmap = bitmap.asImageBitmap(),
+                    contentDescription = "App icon",
                     modifier = Modifier.size(48.dp)
                 )
             }
-            
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(horizontal = 16.dp)
-            ) {
+            Spacer(modifier = Modifier.width(16.dp))
+            Column {
                 Text(
-                    text = appInfo.appName,
-                    style = MaterialTheme.typography.titleMedium
+                    text = app.appName,
+                    style = MaterialTheme.typography.bodyLarge
                 )
                 Text(
-                    text = appInfo.packageName,
+                    text = "${app.packageName} (${app.versionName})",
                     style = MaterialTheme.typography.bodySmall
                 )
             }
+        }
+    }
+}
 
-            Button(
-                onClick = onBackupClick,
-                enabled = backupStatus !is BackupStatus.InProgress
-            ) {
-                when (backupStatus) {
-                    is BackupStatus.InProgress -> CircularProgressIndicator(
-                        modifier = Modifier.size(24.dp)
-                    )
-                    is BackupStatus.Success -> Icon(
-                        imageVector = Icons.Default.Check,
-                        contentDescription = null
-                    )
-                    is BackupStatus.Error -> Icon(
-                        imageVector = Icons.Default.Close,
-                        contentDescription = null
-                    )
-                    null -> Text("Backup")
-                    else -> {}
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun AppListScreen(
+    viewModel: AppBackupViewModel = hiltViewModel(),
+    onSignInRequest: (Intent) -> Unit = {}
+) {
+    val authState by viewModel.authState.collectAsState()
+    val apps by viewModel.apps.collectAsState()
+    val selectedApps by viewModel.selectedApps.collectAsState()
+    val uiState by viewModel.uiState.collectAsState()
+    val backupMode by viewModel.backupMode.collectAsState()
+    val backedUpApps by viewModel.backedUpApps.collectAsState()
+    val context = LocalContext.current
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("APK Backup") },
+                actions = {
+                    if (authState is GoogleDriveStorage.AuthState.Authenticated) {
+                        IconButton(onClick = { viewModel.signOut() }) {
+                            Icon(Icons.AutoMirrored.Filled.ExitToApp, "Sign Out")
+                        }
+                    }
+                }
+            )
+        }
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+        ) {
+            when (authState) {
+                is GoogleDriveStorage.AuthState.NotAuthenticated -> {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
+                            Button(
+                                onClick = {
+                                    val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+                                        .requestEmail()
+                                        .requestScopes(Scope("https://www.googleapis.com/auth/drive.file"))
+                                        .build()
+                                    val googleSignInClient = GoogleSignIn.getClient(context, gso)
+                                    onSignInRequest(googleSignInClient.signInIntent)
+                                }
+                            ) {
+                                Text("Sign in with Google Drive", style = MaterialTheme.typography.titleLarge)
+                            }
+                            Text(
+                                "Sign in to backup and restore your apps",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+
+                is GoogleDriveStorage.AuthState.Authenticated -> {
+                    when (uiState) {
+                        is UiState.Initial -> {
+                            if (backupMode) {
+                                // App selection screen
+                                Column {
+                                    Text(
+                                        text = "Select Apps to Backup",
+                                        style = MaterialTheme.typography.headlineSmall,
+                                        modifier = Modifier.padding(16.dp)
+                                    )
+                                    LazyColumn(
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        items(apps) { app ->
+                                            AppListItem(
+                                                app = app,
+                                                isSelected = selectedApps.contains(app),
+                                                onSelect = { viewModel.toggleAppSelection(app) }
+                                            )
+                                        }
+                                    }
+                                    Button(
+                                        onClick = { viewModel.startBackup() },
+                                        enabled = selectedApps.isNotEmpty(),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(16.dp)
+                                    ) {
+                                        Text("Confirm Backup (${selectedApps.size} apps)")
+                                    }
+                                }
+                            } else {
+                                // Restore screen
+                                Column {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(16.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = "Your Backed Up Apps",
+                                            style = MaterialTheme.typography.headlineSmall
+                                        )
+                                        TextButton(onClick = { viewModel.toggleBackupMode() }) {
+                                            Text("Switch to Backup")
+                                        }
+                                    }
+                                    if (backedUpApps.isEmpty()) {
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .weight(1f),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                "No backed up apps found",
+                                                style = MaterialTheme.typography.bodyLarge,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                    } else {
+                                        LazyColumn(
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            items(backedUpApps) { app ->
+                                                BackedUpAppItem(
+                                                    app = app,
+                                                    onDownload = { viewModel.downloadAndInstallApp(app, context) }
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        is UiState.BackupInProgress -> {
+                            Box(
+                                modifier = Modifier.fillMaxSize(),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                                ) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(48.dp)
+                                    )
+                                    Text(
+                                        text = "Backing up selected apps...",
+                                        style = MaterialTheme.typography.bodyLarge
+                                    )
+                                }
+                            }
+                        }
+                        is UiState.BackupComplete -> {
+                            Box(
+                                modifier = Modifier.fillMaxSize(),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.CheckCircle,
+                                        contentDescription = "Success",
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(48.dp)
+                                    )
+                                    Text(
+                                        text = "Backup completed successfully!",
+                                        style = MaterialTheme.typography.headlineSmall
+                                    )
+                                    Button(
+                                        onClick = { viewModel.toggleBackupMode() }
+                                    ) {
+                                        Text("View Backed Up Apps")
+                                    }
+                                }
+                            }
+                        }
+                        is UiState.Error -> {
+                            Box(
+                                modifier = Modifier.fillMaxSize(),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Warning,
+                                        contentDescription = "Error",
+                                        tint = MaterialTheme.colorScheme.error,
+                                        modifier = Modifier.size(48.dp)
+                                    )
+                                    Text(
+                                        text = (uiState as UiState.Error).message,
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        color = MaterialTheme.colorScheme.error
+                                    )
+                                    Button(
+                                        onClick = { viewModel.resetState() }
+                                    ) {
+                                        Text("Try Again")
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                is GoogleDriveStorage.AuthState.Error -> {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Warning,
+                                contentDescription = "Authentication Error",
+                                tint = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(48.dp)
+                            )
+                            Text(
+                                text = "Authentication Error: ${(authState as GoogleDriveStorage.AuthState.Error).exception.message}",
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                            Button(
+                                onClick = {
+                                    val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+                                        .requestEmail()
+                                        .requestScopes(Scope("https://www.googleapis.com/auth/drive.file"))
+                                        .build()
+                                    val googleSignInClient = GoogleSignIn.getClient(context, gso)
+                                    onSignInRequest(googleSignInClient.signInIntent)
+                                }
+                            ) {
+                                Text("Try Again")
+                            }
+                        }
+                    }
                 }
             }
         }
     }
-} 
+}
+
+@Composable
+private fun BackedUpAppItem(
+    app: AppInfo,
+    onDownload: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .padding(16.dp)
+                .fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = app.appName,
+                    style = MaterialTheme.typography.bodyLarge
+                )
+                Text(
+                    text = "Version: ${app.versionName}",
+                    style = MaterialTheme.typography.bodySmall
+                )
+                if (app.lastBackupTime != null) {
+                    Text(
+                        text = "Backed up: ${java.text.SimpleDateFormat("MMM dd, yyyy", java.util.Locale.getDefault()).format(java.util.Date(app.lastBackupTime))}",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            }
+            IconButton(onClick = onDownload) {
+                Icon(Icons.AutoMirrored.Filled.Send, "Download APK")
+            }
+        }
+    }
+}
+

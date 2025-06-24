@@ -5,6 +5,7 @@ plugins {
     id("kotlin-kapt")
     id("dagger.hilt.android.plugin")
     id("kotlin-parcelize")
+    id("com.google.gms.google-services")
 }
 
 android {
@@ -30,6 +31,20 @@ android {
             )
         }
     }
+
+    packaging {
+        resources {
+            excludes += listOf(
+                "META-INF/DEPENDENCIES",
+                "META-INF/LICENSE",
+                "META-INF/LICENSE.txt",
+                "META-INF/NOTICE",
+                "META-INF/NOTICE.txt",
+                "META-INF/*.kotlin_module"
+            )
+        }
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
@@ -39,11 +54,11 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 
 dependencies {
-
     val composeBomVersion = "2024.01.00"
     val lifecycleVersion = "2.7.0"
     val hiltVersion = "2.48"
@@ -69,10 +84,11 @@ dependencies {
 
     implementation("androidx.documentfile:documentfile:1.0.1")
 
-//    implementation ("com.google.android.gms:play-services-auth:20.7.0")
-//    implementation ("com.google.api-client:google-api-client-android:2.2.0")
-//    implementation ("com.google.apis:google-api-services-drive:v3-rev20230822-2.0.0")
-    implementation ("com.google.http-client:google-http-client-gson:1.43.3")
+    // Google Sign In and Drive API
+    implementation("com.google.android.gms:play-services-auth:20.7.0")
+    implementation("com.google.api-client:google-api-client-android:$googleApiVersion")
+    implementation("com.google.apis:google-api-services-drive:$googleDriveVersion")
+    implementation("com.google.http-client:google-http-client-gson:1.43.3")
 
     // Navigation
     implementation("androidx.navigation:navigation-compose:2.7.6")
@@ -90,8 +106,9 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:$coroutinesVersion")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:$coroutinesVersion")
 
-    // Google Drive API
-    implementation("com.google.api-client:google-api-client-android:$googleApiVersion")
-    implementation("com.google.apis:google-api-services-drive:$googleDriveVersion")
-    implementation("com.google.android.gms:play-services-auth:20.7.0")
+    // Firebase
+    implementation(platform("com.google.firebase:firebase-bom:32.7.0"))
+    implementation("com.google.firebase:firebase-auth-ktx")
+    implementation("com.google.firebase:firebase-storage-ktx")
+    implementation("com.google.firebase:firebase-firestore-ktx")
 }

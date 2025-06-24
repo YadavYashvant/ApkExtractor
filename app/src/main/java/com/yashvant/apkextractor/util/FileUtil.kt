@@ -1,4 +1,7 @@
+package com.yashvant.apkextractor.util
+
 import android.content.Context
+import com.yashvant.apkextractor.data.model.AppInfo
 import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
 import java.io.File

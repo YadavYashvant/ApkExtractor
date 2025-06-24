@@ -5,8 +5,6 @@ import android.app.AlertDialog
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.graphics.drawable.Drawable
-import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.Settings
@@ -19,12 +17,16 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.core.graphics.drawable.toBitmap
+import androidx.core.net.toUri
 import androidx.documentfile.provider.DocumentFile
+import com.yashvant.apkextractor.data.model.AppInfo
+import java.io.File
 import java.io.FileInputStream
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -108,7 +110,7 @@ fun ApkExtractorApp() {
                         AppListItem(
                             app = app,
                             isSelected = app == selectedApp,
-                            onSelect = { selectedApp = it }
+                            onSelect = { selectedApp = app }
                         )
                     }
                 }
@@ -121,7 +123,7 @@ fun ApkExtractorApp() {
                 ) {
                     Text(
                         text = selectedDirectory?.let {
-                            "Selected Directory: ${Uri.parse(it).lastPathSegment}"
+                            "Selected Directory: ${it.toUri().lastPathSegment}"
                         } ?: "Choose Export Directory"
                     )
                 }
@@ -147,36 +149,51 @@ fun ApkExtractorApp() {
 }
 
 @Composable
-fun AppListItem(
+private fun AppListItem(
     app: AppInfo,
     isSelected: Boolean,
-    onSelect: (AppInfo) -> Unit
+    onSelect: () -> Unit
 ) {
-    Row(
+    Card(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { onSelect(app) }
-            .padding(16.dp)
-    ) {
-        Image(
-            bitmap = app.icon.toBitmap().asImageBitmap(),
-            contentDescription = app.name,
-            modifier = Modifier.size(50.dp)
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .clickable(onClick = onSelect),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isSelected) {
+                MaterialTheme.colorScheme.primaryContainer
+            } else {
+                MaterialTheme.colorScheme.surface
+            }
         )
-        Spacer(modifier = Modifier.width(16.dp))
-        Column {
-            Text(
-                text = app.name,
-                style = MaterialTheme.typography.bodyLarge
-            )
-            Text(
-                text = app.packageName,
-                style = MaterialTheme.typography.bodySmall
-            )
+    ) {
+        Row(
+            modifier = Modifier
+                .padding(16.dp)
+                .fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            app.icon?.let { bitmap ->
+                Image(
+                    bitmap = bitmap.asImageBitmap(),
+                    contentDescription = app.appName,
+                    modifier = Modifier.size(48.dp)
+                )
+            }
+            Spacer(modifier = Modifier.width(16.dp))
+            Column {
+                Text(
+                    text = app.appName,
+                    style = MaterialTheme.typography.bodyLarge
+                )
+                Text(
+                    text = "${app.packageName} (${app.versionName})",
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
         }
     }
 }
-
 
 private fun getInstalledApps(context: Context): List<AppInfo> {
     val packageManager = context.packageManager
@@ -184,16 +201,21 @@ private fun getInstalledApps(context: Context): List<AppInfo> {
         .filter { packageInfo ->
             packageManager.getLaunchIntentForPackage(packageInfo.packageName) != null
         }
-        .map { packageInfo ->
-            AppInfo(
-                name = packageInfo.applicationInfo!!.loadLabel(packageManager).toString(),
-                packageName = packageInfo.packageName,
-                icon = packageInfo.applicationInfo!!.loadIcon(packageManager)
-            )
+        .mapNotNull { packageInfo ->
+            packageInfo.applicationInfo?.let { appInfo ->
+                AppInfo(
+                    packageName = packageInfo.packageName,
+                    appName = appInfo.loadLabel(packageManager).toString(),
+                    versionName = packageInfo.versionName ?: "",
+                    apkPath = appInfo.sourceDir,
+                    dataPath = appInfo.dataDir,
+                    size = File(appInfo.sourceDir).length(),
+                    icon = packageManager.getApplicationIcon(packageInfo.packageName).toBitmap()
+                )
+            }
         }
-        .sortedBy { it.name }
+        .sortedBy { it.appName }
 }
-
 
 private fun extractApk(
     context: Context,
@@ -201,16 +223,13 @@ private fun extractApk(
     destinationUri: String
 ) {
     try {
-        val packageManager = context.packageManager
-        val appInfo = packageManager.getApplicationInfo(app.packageName, 0)
-        val sourceApk = appInfo.sourceDir
-
-        val destinationDirectory = DocumentFile.fromTreeUri(context, Uri.parse(destinationUri))
+        val sourceApk = app.apkPath
+        val destinationDirectory = DocumentFile.fromTreeUri(context, destinationUri.toUri())
             ?: throw IllegalStateException("Cannot access destination directory")
 
         val apkFile = destinationDirectory.createFile(
             "application/vnd.android.package-archive",
-            "${app.name}_${app.packageName}.apk"
+            "${app.appName}_${app.packageName}_${app.versionName}.apk"
         ) ?: throw IllegalStateException("Cannot create destination file")
 
         context.contentResolver.openOutputStream(apkFile.uri)?.use { output ->
@@ -233,8 +252,3 @@ private fun extractApk(
     }
 }
 
-data class AppInfo(
-    val name: String,
-    val packageName: String,
-    val icon: Drawable
-)

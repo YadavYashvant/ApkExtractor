@@ -12,11 +12,13 @@ import com.google.android.gms.common.api.Scope
 import com.yashvant.apkextractor.data.model.AppInfo
 import com.yashvant.apkextractor.data.repository.AppRepository
 import com.yashvant.apkextractor.data.storage.GoogleDriveStorage
+import com.yashvant.apkextractor.service.BackupService
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import java.io.File
 import javax.inject.Inject
 
 @HiltViewModel
@@ -61,8 +63,9 @@ class AppBackupViewModel @Inject constructor(
         }
     }
 
-    fun toggleBackupMode() {
+    suspend fun toggleBackupMode() {
         _backupMode.value = !_backupMode.value
+        _selectedApps.value = emptySet()
         if (!_backupMode.value) {
             loadBackedUpApps()
         } else {
@@ -80,19 +83,14 @@ class AppBackupViewModel @Inject constructor(
         _selectedApps.value = currentSelection
     }
 
-    fun startBackup() {
+    fun startBackup(context: Context) {
         viewModelScope.launch {
             _uiState.value = UiState.BackupInProgress
             try {
-                _selectedApps.value.forEach { app ->
-                    val backupFile = appRepository.backupApp(app).getOrThrow()
-                    driveStorage.uploadFile(backupFile, "${app.packageName}_${app.versionName}.apk")
-                        .getOrThrow()
-                }
-                _uiState.value = UiState.BackupComplete
+                val selectedAppsList = ArrayList(_selectedApps.value)
+                BackupService.startBackup(context, selectedAppsList)
                 _selectedApps.value = emptySet()
-                loadBackedUpApps()
-                _backupMode.value = false
+                _uiState.value = UiState.Initial
             } catch (e: Exception) {
                 _uiState.value = UiState.Error(e.message ?: "Backup failed")
             }
@@ -101,39 +99,52 @@ class AppBackupViewModel @Inject constructor(
 
     fun downloadAndInstallApp(app: AppInfo, context: Context) {
         viewModelScope.launch {
-            _uiState.value = UiState.BackupInProgress
+            _uiState.value = UiState.Loading
             try {
-                val downloadedFile = appRepository.downloadApp(app).getOrThrow()
-                val uri = FileProvider.getUriForFile(
-                    context,
-                    "${context.packageName}.provider",
-                    downloadedFile
-                )
-                val intent = Intent(Intent.ACTION_VIEW).apply {
-                    setDataAndType(uri, "application/vnd.android.package-archive")
-                    flags = Intent.FLAG_GRANT_READ_URI_PERMISSION
-                }
-                context.startActivity(intent)
+                val downloadDir = File(context.getExternalFilesDir(null), "downloads").apply { mkdirs() }
+                val downloadFile = File(downloadDir, "${app.packageName}_${app.versionName}.apk")
+
+                app.downloadUrl?.let { fileId ->
+                    driveStorage.downloadFile(fileId, downloadFile).getOrThrow()
+                    val uri = FileProvider.getUriForFile(
+                        context,
+                        "${context.packageName}.provider",
+                        downloadFile
+                    )
+                    val intent = Intent(Intent.ACTION_VIEW).apply {
+                        setDataAndType(uri, "application/vnd.android.package-archive")
+                        flags = Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    }
+                    context.startActivity(intent)
+                } ?: throw IllegalStateException("Download URL not available")
+
                 _uiState.value = UiState.Initial
             } catch (e: Exception) {
-                _uiState.value = UiState.Error(e.message ?: "Download failed")
+                _uiState.value = UiState.Error(e.message ?: "Failed to download and install app")
             }
         }
     }
 
     fun handleSignInResult(data: Intent?) {
-        driveStorage.handleSignInResult(data)
+        viewModelScope.launch {
+            try {
+                driveStorage.handleSignInResult(data)
+            } catch (e: Exception) {
+                _uiState.value = UiState.Error(e.message ?: "Sign in failed")
+            }
+        }
     }
 
     fun signOut() {
-        driveStorage.signOut()
-        _selectedApps.value = emptySet()
-        _apps.value = emptyList()
-        _backedUpApps.value = emptyList()
-        _backupMode.value = true
+        viewModelScope.launch {
+            driveStorage.signOut()
+            _selectedApps.value = emptySet()
+            _apps.value = emptyList()
+            _backedUpApps.value = emptyList()
+        }
     }
 
-    fun resetState() {
+    suspend fun resetState() {
         _uiState.value = UiState.Initial
         if (_backupMode.value) {
             loadInstalledApps()
@@ -142,21 +153,73 @@ class AppBackupViewModel @Inject constructor(
         }
     }
 
-    private fun loadInstalledApps() {
-        viewModelScope.launch {
-            appRepository.getInstalledApps()
-                .collect { appList ->
-                    _apps.value = appList
-                }
+    private suspend fun loadInstalledApps() {
+        _uiState.value = UiState.Loading
+        try {
+            appRepository.getInstalledApps().collect { apps ->
+                _apps.value = apps
+            }
+            _uiState.value = UiState.Initial
+        } catch (e: Exception) {
+            _uiState.value = UiState.Error(e.message ?: "Failed to load installed apps")
         }
     }
 
-    private fun loadBackedUpApps() {
+    fun loadBackedUpApps() {
         viewModelScope.launch {
-            appRepository.getBackedUpApps()
-                .collect { appList ->
-                    _backedUpApps.value = appList
+            _uiState.value = UiState.Loading
+            try {
+                driveStorage.listFiles().getOrNull()?.map { cloudFile ->
+                    AppInfo(
+                        packageName = cloudFile.name.substringBefore("_"),
+                        appName = cloudFile.name.substringBefore("_"),
+                        versionName = cloudFile.name.substringAfter("_").substringBefore(".apk"),
+                        apkPath = "",
+                        dataPath = "",
+                        size = cloudFile.size,
+                        downloadUrl = cloudFile.id,
+                        lastBackupTime = cloudFile.modifiedTime
+                    )
+                }?.let { apps ->
+                    _backedUpApps.value = apps
                 }
+                _uiState.value = UiState.Initial
+            } catch (e: Exception) {
+                _uiState.value = UiState.Error(e.message ?: "Failed to load backed up apps")
+            }
+        }
+    }
+
+    fun backupSelectedApps() {
+        viewModelScope.launch {
+            _uiState.value = UiState.BackupInProgress
+            try {
+                val selectedAppsList = ArrayList(_selectedApps.value)
+                selectedAppsList.forEach { app ->
+                    val backupFile = appRepository.backupApp(app).getOrThrow()
+                    driveStorage.uploadFile(backupFile, "${app.packageName}_${app.versionName}.apk")
+                }
+                _selectedApps.value = emptySet()
+                loadBackedUpApps()
+                _uiState.value = UiState.Initial
+            } catch (e: Exception) {
+                _uiState.value = UiState.Error(e.message ?: "Backup failed")
+            }
+        }
+    }
+
+    fun installSelectedApps(context: Context) {
+        viewModelScope.launch {
+            _uiState.value = UiState.Loading
+            try {
+                _selectedApps.value.forEach { app ->
+                    downloadAndInstallApp(app, context)
+                }
+                _selectedApps.value = emptySet()
+                _uiState.value = UiState.Initial
+            } catch (e: Exception) {
+                _uiState.value = UiState.Error(e.message ?: "Installation failed")
+            }
         }
     }
 
@@ -167,8 +230,8 @@ class AppBackupViewModel @Inject constructor(
 
 sealed class UiState {
     object Initial : UiState()
+    object Loading : UiState()
     object BackupInProgress : UiState()
-    object BackupComplete : UiState()
     data class Error(val message: String) : UiState()
 }
 

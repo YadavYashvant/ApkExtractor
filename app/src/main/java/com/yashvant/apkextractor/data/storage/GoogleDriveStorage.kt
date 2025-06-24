@@ -13,7 +13,9 @@ import com.google.api.client.http.FileContent
 import com.google.api.client.http.javanet.NetHttpTransport
 import com.google.api.client.json.gson.GsonFactory
 import com.google.api.services.drive.Drive
+import com.google.api.services.drive.model.File as DriveFile
 import com.yashvant.apkextractor.R
+import com.yashvant.apkextractor.util.Config
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -28,26 +30,34 @@ import javax.inject.Singleton
 class GoogleDriveStorage @Inject constructor(
     private val context: Context
 ) : CloudStorage {
-    private val scope = "https://www.googleapis.com/auth/drive.file"
+    private val scopes = listOf(Config.DRIVE_SCOPE)
     private var driveService: Drive? = null
-    
+    private var backupFolderId: String? = null
+
     private val _authState = MutableStateFlow<AuthState>(AuthState.NotAuthenticated)
     val authState: StateFlow<AuthState> = _authState.asStateFlow()
 
     suspend fun signIn(activity: Activity) {
-        val googleSignInClient = GoogleSignIn.getClient(
-            activity,
-            GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
-                .requestEmail()
-                .requestScopes(Scope(scope))
-                .build()
-        )
+        val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+            .requestEmail()
+            .requestScopes(Scope(scopes[0]))
+            .requestIdToken(Config.OAUTH_CLIENT_ID)
+            .build()
 
-        val signInIntent = googleSignInClient.signInIntent
-        activity.startActivityForResult(signInIntent, RC_SIGN_IN)
+        val googleSignInClient = GoogleSignIn.getClient(activity, gso)
+        // Clear any previous sign-in state and launch the sign-in flow
+        googleSignInClient.signOut().addOnCompleteListener {
+            val signInIntent = googleSignInClient.signInIntent
+            activity.startActivityForResult(signInIntent, RC_SIGN_IN)
+        }
     }
 
-    fun handleSignInResult(data: Intent?) {
+    suspend fun setGoogleAccount(account: GoogleSignInAccount) {
+        setupDriveService(account)
+        _authState.value = AuthState.Authenticated(account.email ?: "")
+    }
+
+    suspend fun handleSignInResult(data: Intent?) {
         val task = GoogleSignIn.getSignedInAccountFromIntent(data)
         try {
             val account = task.getResult(ApiException::class.java)
@@ -58,66 +68,113 @@ class GoogleDriveStorage @Inject constructor(
         }
     }
 
-    private fun setupDriveService(account: GoogleSignInAccount) {
-        val credential = GoogleAccountCredential.usingOAuth2(
-            context,
-            listOf(scope)
-        ).apply {
-            selectedAccount = account.account
-        }
+    private suspend fun ensureBackupFolder(): String = withContext(Dispatchers.IO) {
+        try {
+            backupFolderId?.let { return@withContext it }
 
-        driveService = Drive.Builder(
-//            AndroidHttp.newCompatibleTransport(),
-            NetHttpTransport.Builder().build(),
-            GsonFactory(),
-            credential
-        )
-            .setApplicationName(context.getString(R.string.app_name))
-            .build()
-    }
+            val folderList = driveService?.files()?.list()
+                ?.setQ("mimeType='application/vnd.google-apps.folder' and name='AppBackups' and trashed=false")
+                ?.setFields("files(id, name)")
+                ?.execute()
+                ?.files
 
-    override suspend fun uploadFile(file: File, fileName: String): Result<String> = withContext(
-        Dispatchers.IO) {
-        runCatching {
-            val fileMetadata = com.google.api.services.drive.model.File().apply {
-                name = fileName
-                parents = listOf("appDataFolder")
+            backupFolderId = if (!folderList.isNullOrEmpty()) {
+                folderList[0].id
+            } else {
+                val folderMetadata = DriveFile().apply {
+                    name = "AppBackups"
+                    mimeType = "application/vnd.google-apps.folder"
+                }
+                driveService?.files()?.create(folderMetadata)
+                    ?.setFields("id")
+                    ?.execute()
+                    ?.id
             }
 
-            val mediaContent = FileContent("application/zip", file)
-            
-            driveService?.files()?.create(fileMetadata, mediaContent)
-                ?.setFields("id")
-                ?.execute()
-                ?.id ?: throw IllegalStateException("Drive service not initialized")
+            return@withContext backupFolderId ?: throw IllegalStateException("Could not create or find backup folder")
+        } catch (e: Exception) {
+            throw IllegalStateException("Failed to create or find backup folder: ${e.message}")
+        }
+    }
+
+    override suspend fun uploadFile(file: File, fileName: String): Result<String> = withContext(Dispatchers.IO) {
+        runCatching {
+            if (driveService == null) throw IllegalStateException("Drive service not initialized. Please sign in first.")
+
+            try {
+                val folderId = ensureBackupFolder()
+                val fileMetadata = DriveFile().apply {
+                    name = fileName
+                    parents = listOf(folderId)
+                }
+
+                val mediaContent = FileContent("application/vnd.android.package-archive", file)
+
+                val uploadedFile = driveService?.files()?.create(fileMetadata, mediaContent)
+                    ?.setFields("id, name")
+                    ?.execute()
+                    ?: throw IllegalStateException("Failed to upload file")
+
+                uploadedFile.id
+            } catch (e: Exception) {
+                throw IllegalStateException("Failed to upload file: ${e.message}")
+            }
         }
     }
 
     override suspend fun downloadFile(fileId: String, destinationFile: File): Result<File> = withContext(Dispatchers.IO) {
         runCatching {
-            val outputStream = FileOutputStream(destinationFile)
-            driveService?.files()?.get(fileId)?.executeMediaAndDownloadTo(outputStream)
-            outputStream.close()
+            if (driveService == null) throw IllegalStateException("Drive service not initialized. Please sign in first.")
+
+            driveService?.files()?.get(fileId)?.executeMediaAndDownloadTo(FileOutputStream(destinationFile))
             destinationFile
         }
     }
 
     override suspend fun listFiles(): Result<List<CloudFile>> = withContext(Dispatchers.IO) {
         runCatching {
-            driveService?.files()?.list()
-                ?.setSpaces("appDataFolder")
+            if (driveService == null) throw IllegalStateException("Drive service not initialized. Please sign in first.")
+
+            val folderId = ensureBackupFolder()
+            val result = driveService?.files()?.list()
+                ?.setQ("'$folderId' in parents and trashed=false")
                 ?.setFields("files(id, name, size, modifiedTime)")
                 ?.execute()
-                ?.files
-                ?.map { file ->
-                    CloudFile(
-                        id = file.id,
-                        name = file.name,
-                        size = file.getSize() ?: 0,
-                        modifiedTime = file.modifiedTime?.value ?: 0
-                    )
-                } ?: emptyList()
+
+            result?.files?.map { file ->
+                CloudFile(
+                    id = file.id,
+                    name = file.name,
+                    size = file.getSize() ?: 0L,
+                    modifiedTime = file.modifiedTime?.value ?: 0L
+                )
+            } ?: emptyList()
         }
+    }
+
+    private suspend fun setupDriveService(account: GoogleSignInAccount) {
+        val credential = GoogleAccountCredential.usingOAuth2(
+            context,
+            scopes
+        ).apply {
+            selectedAccount = account.account
+        }
+
+        driveService = Drive.Builder(
+            NetHttpTransport(),
+            GsonFactory.getDefaultInstance(),
+            credential
+        ).setApplicationName(context.getString(R.string.app_name))
+            .build()
+
+        // Initialize backup folder
+        ensureBackupFolder()
+    }
+
+    fun signOut() {
+        driveService = null
+        backupFolderId = null
+        _authState.value = AuthState.NotAuthenticated
     }
 
     sealed class AuthState {
@@ -129,4 +186,5 @@ class GoogleDriveStorage @Inject constructor(
     companion object {
         const val RC_SIGN_IN = 9001
     }
-} 
+}
+

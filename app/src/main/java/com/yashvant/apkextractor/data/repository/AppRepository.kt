@@ -50,11 +50,10 @@ class AppRepository @Inject constructor(
         return (appInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0
     }
 
-    suspend fun backupApp(appInfo: AppInfo): Result<File> = runCatching {
-        // Create a copy of the APK in the app's cache directory
-        val apkFile = File(appInfo.apkPath)
+    suspend fun backupApp(app: AppInfo): Result<File> = runCatching {
+        val apkFile = File(app.apkPath)
         val backupDir = File(context.cacheDir, "backups").apply { mkdirs() }
-        val backupFile = File(backupDir, "${appInfo.packageName}_${appInfo.versionName}.apk")
+        val backupFile = File(backupDir, "${app.packageName}_${app.versionName}.apk")
 
         if (backupFile.exists()) {
             backupFile.delete()

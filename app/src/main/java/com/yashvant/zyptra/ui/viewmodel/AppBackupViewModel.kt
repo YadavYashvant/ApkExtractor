@@ -23,6 +23,9 @@ class AppBackupViewModel @Inject constructor(
     private val driveStorage: GoogleDriveStorage
 ) : ViewModel() {
 
+    private val _isInitialLoading = MutableStateFlow(true)
+    val isInitialLoading: StateFlow<Boolean> = _isInitialLoading.asStateFlow()
+
     private val _uiState = MutableStateFlow<UiState>(UiState.Initial)
     val uiState: StateFlow<UiState> = _uiState.asStateFlow()
 
@@ -55,6 +58,7 @@ class AppBackupViewModel @Inject constructor(
                         _backedUpApps.value = emptyList()
                     }
                 }
+                _isInitialLoading.value = false
             }
         }
     }
@@ -124,9 +128,12 @@ class AppBackupViewModel @Inject constructor(
     fun handleSignInResult(data: Intent?) {
         viewModelScope.launch {
             try {
+                _isInitialLoading.value = true
                 driveStorage.handleSignInResult(data)
             } catch (e: Exception) {
                 _uiState.value = UiState.Error(e.message ?: "Sign in failed")
+            } finally {
+                _isInitialLoading.value = false
             }
         }
     }

@@ -115,13 +115,14 @@ fun AppListScreen(
 
     var selectedTab by remember { mutableStateOf(0) }
     val snackbarHostState = remember { SnackbarHostState() }
+    val isInitialLoading by viewModel.isInitialLoading.collectAsState()
 
     Box(modifier = Modifier.fillMaxSize()) {
         Scaffold(
             topBar = {
                 Column {
                     TopAppBar(
-                        title = { Text("APK Backup") },
+                        title = { Text("Zyptra") },
                         actions = {
                             if (authState is GoogleDriveStorage.AuthState.Authenticated) {
                                 IconButton(onClick = { viewModel.signOut() }) {
@@ -172,68 +173,79 @@ fun AppListScreen(
                 SnackbarHost(hostState = snackbarHostState)
             }
         ) { padding ->
-            when (authState) {
-                is GoogleDriveStorage.AuthState.Authenticated -> {
-                    Box(modifier = Modifier.padding(padding)) {
-                        when {
-                            uiState is UiState.Loading -> {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.align(Alignment.Center)
-                                )
-                            }
-                            uiState is UiState.Error -> {
-                                Column(
-                                    modifier = Modifier.align(Alignment.Center),
-                                    horizontalAlignment = Alignment.CenterHorizontally
-                                ) {
-                                    Icon(Icons.Default.Warning, "Error")
-                                    Text((uiState as UiState.Error).message)
-                                }
-                            }
-                            else -> {
-                                if (selectedTab == 0) {
-                                    LazyColumn {
-                                        items(apps) { app ->
-                                            AppListItem(
-                                                app = app,
-                                                isSelected = selectedApps.contains(app),
-                                                onSelect = { viewModel.toggleAppSelection(app) }
-                                            )
-                                        }
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding),
+                contentAlignment = Alignment.Center
+            ) {
+                when {
+                    isInitialLoading -> {
+                        CircularProgressIndicator()
+                    }
+                    authState is GoogleDriveStorage.AuthState.Authenticated -> {
+                        Box(modifier = Modifier.fillMaxSize()) {
+                            when {
+                                uiState is UiState.Loading -> {
+                                    Box(
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        CircularProgressIndicator()
                                     }
-                                } else {
-                                    LazyColumn {
-                                        items(backedUpApps) { app ->
-                                            AppListItem(
-                                                app = app,
-                                                isSelected = selectedApps.contains(app),
-                                                onSelect = { viewModel.toggleAppSelection(app) }
-                                            )
+                                }
+                                uiState is UiState.Error -> {
+                                    Column(
+                                        modifier = Modifier.align(Alignment.Center),
+                                        horizontalAlignment = Alignment.CenterHorizontally
+                                    ) {
+                                        Icon(Icons.Default.Warning, "Error")
+                                        Text((uiState as UiState.Error).message)
+                                    }
+                                }
+                                else -> {
+                                    if (selectedTab == 0) {
+                                        LazyColumn {
+                                            items(apps) { app ->
+                                                AppListItem(
+                                                    app = app,
+                                                    isSelected = selectedApps.contains(app),
+                                                    onSelect = { viewModel.toggleAppSelection(app) }
+                                                )
+                                            }
+                                        }
+                                    } else {
+                                        LazyColumn {
+                                            items(backedUpApps) { app ->
+                                                AppListItem(
+                                                    app = app,
+                                                    isSelected = selectedApps.contains(app),
+                                                    onSelect = { viewModel.toggleAppSelection(app) }
+                                                )
+                                            }
                                         }
                                     }
                                 }
                             }
                         }
                     }
-                }
-                else -> {
-                    Box(
-                        modifier = Modifier
-                            .padding(padding)
-                            .fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Button(
-                            onClick = {
-                                val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
-                                    .requestEmail()
-                                    .requestScopes(Scope(DriveScopes.DRIVE_FILE))
-                                    .build()
-                                val googleSignInClient = GoogleSignIn.getClient(context, gso)
-                                onSignInRequest(googleSignInClient.signInIntent)
-                            }
+                    else -> {
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
                         ) {
-                            Text("Sign in with Google")
+                            Button(
+                                onClick = {
+                                    val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+                                        .requestEmail()
+                                        .requestScopes(Scope(DriveScopes.DRIVE_FILE))
+                                        .build()
+                                    val googleSignInClient = GoogleSignIn.getClient(context, gso)
+                                    onSignInRequest(googleSignInClient.signInIntent)
+                                }
+                            ) {
+                                Text("Sign in with Google")
+                            }
                         }
                     }
                 }

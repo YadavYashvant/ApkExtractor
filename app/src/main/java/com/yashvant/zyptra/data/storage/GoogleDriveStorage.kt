@@ -58,12 +58,23 @@ class GoogleDriveStorage @Inject constructor(
     }
 
     suspend fun handleSignInResult(data: Intent?) {
-        val task = GoogleSignIn.getSignedInAccountFromIntent(data)
         try {
+            // Handle existing account case
+            val existingAccount = data?.getParcelableExtra<GoogleSignInAccount>("googleAccount")
+            if (existingAccount != null) {
+                setupDriveService(existingAccount)
+                _authState.value = AuthState.Authenticated(existingAccount.email ?: "")
+                return
+            }
+
+            // Handle new sign-in result
+            val task = GoogleSignIn.getSignedInAccountFromIntent(data)
             val account = task.getResult(ApiException::class.java)
             setupDriveService(account)
             _authState.value = AuthState.Authenticated(account.email ?: "")
         } catch (e: ApiException) {
+            _authState.value = AuthState.Error(e)
+        } catch (e: Exception) {
             _authState.value = AuthState.Error(e)
         }
     }

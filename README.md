@@ -60,7 +60,7 @@ A full-fledged Android application backup solution with cloud integration. This 
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/yourusername/ApkExtractor.git
+   git clone https://github.com/YadavYashvant/ApkExtractor.git
    ```
 
 2. Configure Google Services:

@@ -1,4 +1,4 @@
-# ApkExtractor 📱
+# Zyptra 📱
 
 A full-fledged Android application backup solution with cloud integration. This app allows users to extract and backup APKs from their installed applications and store them securely in Google Drive.
 

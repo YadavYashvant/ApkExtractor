@@ -37,6 +37,11 @@ class BackupService : Service() {
         const val APPS_TO_BACKUP = "apps_to_backup"
 
         fun startBackup(context: Context, apps: ArrayList<AppInfo>) {
+            // Check if we have notification permission before starting the service
+            if (!PermissionUtil.hasNotificationPermission(context)) {
+                return
+            }
+
             val intent = Intent(context, BackupService::class.java).apply {
                 putParcelableArrayListExtra(APPS_TO_BACKUP, apps)
             }
@@ -53,7 +58,7 @@ class BackupService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val appsToBackup = intent?.getParcelableArrayListExtra<AppInfo>(APPS_TO_BACKUP)
-        if (appsToBackup != null) {
+        if (appsToBackup != null && PermissionUtil.hasNotificationPermission(this)) {
             startForeground(NOTIFICATION_ID, notificationBuilder.build())
             performBackup(appsToBackup)
         }
@@ -65,9 +70,11 @@ class BackupService : Service() {
             val channel = NotificationChannel(
                 CHANNEL_ID,
                 "App Backup Service",
-                NotificationManager.IMPORTANCE_HIGH
+                NotificationManager.IMPORTANCE_DEFAULT
             ).apply {
                 description = "Shows backup progress for apps"
+                setShowBadge(true)
+                enableVibration(true)
             }
             notificationManager.createNotificationChannel(channel)
         }
@@ -78,12 +85,15 @@ class BackupService : Service() {
             .setContentTitle("App Backup")
             .setContentText("Preparing backup...")
             .setSmallIcon(R.mipmap.ic_launcher)
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .setProgress(100, 0, true)
             .setOngoing(true)
+            .setAutoCancel(false)
     }
 
     private fun updateNotification(title: String, message: String, progress: Int, maxProgress: Int) {
+        if (!PermissionUtil.hasNotificationPermission(this)) return
+
         val notification = notificationBuilder
             .setContentTitle(title)
             .setContentText(message)
@@ -93,11 +103,13 @@ class BackupService : Service() {
     }
 
     private fun showSuccessNotification(appsCount: Int) {
+        if (!PermissionUtil.hasNotificationPermission(this)) return
+
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Backup Complete")
             .setContentText("Successfully backed up $appsCount apps")
             .setSmallIcon(R.mipmap.ic_launcher)
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .setAutoCancel(true)
             .build()
         notificationManager.notify(NOTIFICATION_ID + 1, notification)
@@ -105,11 +117,13 @@ class BackupService : Service() {
     }
 
     private fun showErrorNotification(error: String) {
+        if (!PermissionUtil.hasNotificationPermission(this)) return
+
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Backup Failed")
             .setContentText(error)
             .setSmallIcon(R.mipmap.ic_launcher)
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .setAutoCancel(true)
             .build()
         notificationManager.notify(NOTIFICATION_ID + 2, notification)

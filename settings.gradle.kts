@@ -19,6 +19,6 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "ApkExtractor"
+rootProject.name = "Zyptra"
 include(":app")
  

@@ -65,7 +65,7 @@ class BackupService : Service() {
             val channel = NotificationChannel(
                 CHANNEL_ID,
                 "App Backup Service",
-                NotificationManager.IMPORTANCE_DEFAULT
+                NotificationManager.IMPORTANCE_HIGH
             ).apply {
                 description = "Shows backup progress for apps"
             }
@@ -78,7 +78,7 @@ class BackupService : Service() {
             .setContentTitle("App Backup")
             .setContentText("Preparing backup...")
             .setSmallIcon(R.mipmap.ic_launcher)
-            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setProgress(100, 0, true)
             .setOngoing(true)
     }
@@ -97,7 +97,7 @@ class BackupService : Service() {
             .setContentTitle("Backup Complete")
             .setContentText("Successfully backed up $appsCount apps")
             .setSmallIcon(R.mipmap.ic_launcher)
-            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)
             .build()
         notificationManager.notify(NOTIFICATION_ID + 1, notification)

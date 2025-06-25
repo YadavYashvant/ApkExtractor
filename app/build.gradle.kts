@@ -9,11 +9,11 @@ plugins {
 }
 
 android {
-    namespace = "com.yashvant.apkextractor"
+    namespace = "com.yashvant.zyptra"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.yashvant.apkextractor"
+        applicationId = "com.yashvant.zyptra"
         minSdk = 24
         targetSdk = 34
         versionCode = 1

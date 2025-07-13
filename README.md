@@ -66,7 +66,13 @@ A full-fledged Android application backup solution with cloud integration. This 
 3. Update OAuth Client ID:
    - Open `Config.kt`
    - Replace the `OAUTH_CLIENT_ID` value with your OAuth client ID
-
+   - An example Config.kt file can be written as follows - <br>
+    ```kotlin
+     package com.yashvant.zyptra.util
+     object Config {
+     const val OAUTH_CLIENT_ID = "OAUTH_CLIENT_ID"
+     const val DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.file"
+     } 
 4. Generate SHA-1:
    ```bash
    keytool -list -v -keystore ~/.android/debug.keystore -alias androiddebugkey -storepass android -keypass android

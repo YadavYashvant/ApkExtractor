@@ -19,10 +19,6 @@ A full-fledged Android application backup solution with cloud integration. This 
 - 🔄 Batch backup operations
 - 🎯 Android 12+ support
 
-## Screenshots 📸
-
-[Add your screenshots here]
-
 ## Tech Stack 🛠️
 
 - **Language**: Kotlin
